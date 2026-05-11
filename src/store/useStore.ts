@@ -12,6 +12,7 @@ export interface Player {
 
 interface GameState {
   sessionId: string | null;
+  sessionUuid: string | null;
   players: Player[];
   teamCount: number;
   isGameStarted: boolean;
@@ -20,7 +21,7 @@ interface GameState {
   myPlayerId: string | null;
   scores: Record<number, number>;
 
-  initSession: (sessionId: string) => Promise<void>;
+  initSession: (sessionId: string, isHost?: boolean) => Promise<void>;
   setMyPlayerId: (id: string) => void;
   addPlayer: (player: Player) => Promise<void>;
   setTeamCount: (count: number) => Promise<void>;
@@ -36,6 +37,7 @@ interface GameState {
 
 export const useStore = create<GameState>((set, get) => ({
   sessionId: null,
+  sessionUuid: null,
   players: [],
   teamCount: 2,
   isGameStarted: false,
@@ -44,19 +46,39 @@ export const useStore = create<GameState>((set, get) => ({
   scores: {},
   myPlayerId: null,
 
-  initSession: async (sessionId) => {
+  initSession: async (sessionId, isHost = false) => {
     set({ sessionId });
     
-    // 1. Ensure game_state row exists
-    await supabase.from('game_state').upsert(
-      { session_id: sessionId },
-      { onConflict: 'session_id', ignoreDuplicates: true }
-    );
+    let sessionUuid = null;
 
-    // 2. Fetch initial data
+    if (isHost) {
+      // 1. Host creates a new session in the `sessions` table
+      const { data, error } = await supabase.from('sessions').insert({
+        session_code: sessionId,
+        is_active: true
+      }).select('id').single();
+
+      if (data) {
+        sessionUuid = data.id;
+      } else if (error) {
+        console.error("Failed to create session:", error);
+      }
+    } else {
+      // 2. Player joins, fetch existing session UUID
+      const { data } = await supabase.from('sessions').select('id').eq('session_code', sessionId).single();
+      if (data) {
+        sessionUuid = data.id;
+      }
+    }
+
+    if (sessionUuid) {
+      set({ sessionUuid });
+    }
+
+    // 2. Fetch initial data (Legacy support for now, ideally migrate all game_state logic soon)
     const [{ data: gameData }, { data: playersData }] = await Promise.all([
       supabase.from('game_state').select('*').eq('session_id', sessionId).single(),
-      supabase.from('players').select('*').eq('session_id', sessionId)
+      sessionUuid ? supabase.from('players').select('*').eq('session_id', sessionUuid) : { data: [] }
     ]);
 
     if (gameData) get()._setGameStateFromServer(gameData);
@@ -69,15 +91,6 @@ export const useStore = create<GameState>((set, get) => ({
         { event: '*', schema: 'public', table: 'game_state', filter: `session_id=eq.${sessionId}` },
         (payload) => {
           if (payload.new) get()._setGameStateFromServer(payload.new);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'players', filter: `session_id=eq.${sessionId}` },
-        async () => {
-          // Simplest way to sync players: re-fetch all for this session
-          const { data } = await supabase.from('players').select('*').eq('session_id', sessionId);
-          if (data) get()._setPlayersFromServer(data);
         }
       )
       .subscribe();

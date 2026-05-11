@@ -1,12 +1,42 @@
+import { useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useStore } from '../store/useStore';
 import { Users, Shuffle, Link as LinkIcon, Play } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export default function HostDashboard() {
-  const { players, teamCount, setTeamCount, distributeTeams, startGame, sessionId } = useStore();
+  const { players, teamCount, setTeamCount, distributeTeams, startGame, sessionId, sessionUuid, _setPlayersFromServer } = useStore();
   
   // URL to join
   const joinUrl = `${window.location.origin}?session=${sessionId}`;
+
+  useEffect(() => {
+    if (!sessionUuid) return;
+
+    // Fetch initial players just in case
+    supabase.from('players').select('*').eq('session_id', sessionUuid).then(({ data }) => {
+      if (data) _setPlayersFromServer(data);
+    });
+
+    const channel = supabase
+      .channel('players-follow')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'players', filter: `session_id=eq.${sessionUuid}` },
+        async () => {
+          console.log("Realtime: players table changed, refreshing...");
+          const { data } = await supabase.from('players').select('*').eq('session_id', sessionUuid);
+          if (data) {
+            _setPlayersFromServer(data);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionUuid, _setPlayersFromServer]);
 
   const hasTeams = players.some(p => p.team);
   
