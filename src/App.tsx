@@ -5,12 +5,17 @@ import ActiveGame from "./components/ActiveGame";
 import StartPage from "./components/StartPage";
 import WaitingRoom from "./components/WaitingRoom";
 import { useStore } from "./store/useStore";
+import { supabase } from "./lib/supabase";
 
 function App() {
   const isGameStarted = useStore((state) => state.isGameStarted);
   const initSession = useStore((state) => state.initSession);
   const sessionId = useStore((state) => state.sessionId);
+  const sessionUuid = useStore((state) => state.sessionUuid);
   const myPlayerId = useStore((state) => state.myPlayerId);
+  const _setPlayersFromServer = useStore(
+    (state) => state._setPlayersFromServer,
+  );
   const [isHost, setIsHost] = useState(false);
 
   useEffect(() => {
@@ -29,6 +34,58 @@ function App() {
       initSession(session, hostParam);
     }
   }, [initSession]);
+
+  // Global Realtime Subscriptions for Game State and Players
+  useEffect(() => {
+    if (!sessionUuid) return;
+
+    const channel = supabase
+      .channel(`sync-app-${sessionUuid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "game_state",
+          filter: `session_id=eq.${sessionUuid}`,
+        },
+        (payload) => {
+          if (payload.new) {
+            console.log("Realtime game_state update:", payload.new);
+            useStore.setState({
+              isGameStarted: payload.new.is_game_started,
+              teamCount: payload.new.team_count,
+              activeTeamId: payload.new.active_team_id,
+              activePlayerIndexByTeam: payload.new.active_player_index_by_team,
+              scores: payload.new.scores,
+            });
+          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: `session_id=eq.${sessionUuid}`,
+        },
+        async () => {
+          if (_setPlayersFromServer) {
+            const { data } = await supabase
+              .from("players")
+              .select("*")
+              .eq("session_id", sessionUuid);
+            if (data) _setPlayersFromServer(data);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionUuid, _setPlayersFromServer]);
 
   const handleStartSession = () => {
     const newSession = crypto.randomUUID().slice(0, 8);
