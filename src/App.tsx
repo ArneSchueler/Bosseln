@@ -1,31 +1,43 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import PlayerRegistration from './components/PlayerRegistration';
 import HostDashboard from './components/HostDashboard';
 import ActiveGame from './components/ActiveGame';
+import StartPage from './components/StartPage';
 import { useStore } from './store/useStore';
 
 function App() {
   const isGameStarted = useStore((state) => state.isGameStarted);
   const initSession = useStore((state) => state.initSession);
   const sessionId = useStore((state) => state.sessionId);
+  const [isHost, setIsHost] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    let session = params.get('session');
+    const session = params.get('session');
+    const hostParam = params.get('host') === 'true';
     
-    if (!session) {
-      session = crypto.randomUUID().slice(0, 8);
-      // Update URL without reloading
-      const newUrl = `${window.location.pathname}?session=${session}`;
-      window.history.replaceState({ path: newUrl }, '', newUrl);
+    if (hostParam) {
+      setIsHost(true);
     }
     
-    initSession(session);
+    if (session) {
+      initSession(session);
+    }
   }, [initSession]);
 
-  if (!sessionId) {
-    return <div className="min-h-screen flex items-center justify-center">Loading Session...</div>;
-  }
+  const handleStartSession = () => {
+    const newSession = crypto.randomUUID().slice(0, 8);
+    const newUrl = `${window.location.pathname}?session=${newSession}&host=true`;
+    window.history.pushState({ path: newUrl }, '', newUrl);
+    setIsHost(true);
+    initSession(newSession);
+  };
+
+  const handleJoinSession = (id: string) => {
+    const newUrl = `${window.location.pathname}?session=${id}`;
+    window.history.pushState({ path: newUrl }, '', newUrl);
+    initSession(id);
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -34,7 +46,9 @@ function App() {
       </header>
       
       <main className="container mx-auto max-w-md p-4 space-y-8">
-        {isGameStarted ? (
+        {!sessionId ? (
+          <StartPage onStartSession={handleStartSession} onJoinSession={handleJoinSession} />
+        ) : isGameStarted ? (
           <ActiveGame />
         ) : (
           <>
@@ -42,9 +56,11 @@ function App() {
               <PlayerRegistration />
             </section>
 
-            <section className="pt-8 border-t border-slate-200">
-              <HostDashboard />
-            </section>
+            {isHost && (
+              <section className="pt-8 border-t border-slate-200">
+                <HostDashboard />
+              </section>
+            )}
           </>
         )}
       </main>
