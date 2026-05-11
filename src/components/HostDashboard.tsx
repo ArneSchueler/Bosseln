@@ -1,8 +1,6 @@
-import { useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useStore } from "../store/useStore";
 import { Users, Shuffle, Link as LinkIcon, Play } from "lucide-react";
-import { supabase } from "../lib/supabase";
 
 export default function HostDashboard() {
   const {
@@ -12,8 +10,6 @@ export default function HostDashboard() {
     distributeTeams,
     startGame,
     sessionId,
-    sessionUuid,
-    _setPlayersFromServer,
   } = useStore();
 
   // URL to join
