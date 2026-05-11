@@ -14,6 +14,7 @@ export default function PlayerRegistration() {
   
   const addPlayer = useStore((state) => state.addPlayer);
   const setMyPlayerId = useStore((state) => state.setMyPlayerId);
+  const sessionId = useStore((state) => state.sessionId);
 
   const startRecording = async () => {
     try {
@@ -64,22 +65,71 @@ export default function PlayerRegistration() {
       alert('Please enter your name.');
       return;
     }
+
+    if (!sessionId) {
+      console.error("Join aborted: No sessionId present in the store.");
+      alert('Session error. Please refresh the page.');
+      return;
+    }
+    
+    console.log("--- Starting Player Registration ---");
+    console.log("1. Verifying session mapping for session code:", sessionId);
+
+    // Get the actual session UUID from the session_code
+    const { data: sessionData, error: sessionError } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('session_code', sessionId)
+      .single();
+
+    if (sessionError || !sessionData) {
+      console.error("Database Error: Failed to find session UUID for code", sessionId, sessionError);
+      alert("Session not found. Make sure the host has created it properly.");
+      return;
+    }
+
+    const sessionUuid = sessionData.id;
+    console.log("Success: Found session UUID:", sessionUuid);
     
     const newId = crypto.randomUUID();
     let finalAudioUrl = audioUrl || undefined;
 
     if (audioBlob) {
+      console.log("2. Attempting to upload audio blob to Supabase Storage...");
       const fileName = `${newId}.webm`;
       const { data, error } = await supabase.storage.from('audio').upload(fileName, audioBlob);
+      
       if (!error && data) {
+        console.log("Success: Audio uploaded successfully:", data);
         const { data: publicUrlData } = supabase.storage.from('audio').getPublicUrl(fileName);
         finalAudioUrl = publicUrlData.publicUrl;
+        console.log("Generated public audio URL:", finalAudioUrl);
       } else {
-        console.error("Audio upload failed:", error);
+        console.error("Storage Error: Audio upload failed. Proceeding without audio.", error);
       }
+    } else {
+      console.log("2. No audio blob recorded. Skipping upload.");
     }
 
-    await addPlayer({
+    console.log("3. Inserting new player into the 'players' table...");
+    const { error: insertError } = await supabase.from('players').insert({
+      id: newId,
+      session_id: sessionUuid,
+      name: name.trim(),
+      audio_url: finalAudioUrl,
+    });
+
+    if (insertError) {
+      console.error("Database Error: Failed to insert player:", insertError);
+      alert("Failed to join the game. Database insert error.");
+      return;
+    }
+
+    console.log("Success: Player inserted into database!");
+    console.log("--- Player Registration Complete ---");
+
+    // Optimistically update the store
+    addPlayer({
       id: newId,
       name: name.trim(),
       audioBlob: audioBlob,

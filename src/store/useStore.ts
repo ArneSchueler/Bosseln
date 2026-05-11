@@ -108,20 +108,8 @@ export const useStore = create<GameState>((set, get) => ({
   setMyPlayerId: (id) => set({ myPlayerId: id }),
 
   addPlayer: async (player) => {
-    const state = get();
-    if (!state.sessionId) return;
-    
-    // Optimistic update
-    set({ players: [...state.players, player] });
-    
-    // Remote update
-    await supabase.from('players').insert({
-      id: player.id,
-      session_id: state.sessionId,
-      name: player.name,
-      audio_url: player.audioUrl,
-      team: player.team
-    });
+    // Only update local state, DB insert is handled in PlayerRegistration
+    set((state) => ({ players: [...state.players, player] }));
   },
   
   setTeamCount: async (count) => {
