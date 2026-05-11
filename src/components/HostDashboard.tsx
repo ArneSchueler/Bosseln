@@ -8,7 +8,7 @@ export default function HostDashboard() {
   const { players, teamCount, setTeamCount, distributeTeams, startGame, sessionId, sessionUuid, _setPlayersFromServer } = useStore();
   
   // URL to join
-  const joinUrl = `${window.location.origin}?session=${sessionId}`;
+  const joinUrl = `${window.location.origin}/join?session=${sessionId}`;
 
   useEffect(() => {
     if (!sessionUuid) return;

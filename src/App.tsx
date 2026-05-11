@@ -21,22 +21,25 @@ function App() {
     }
     
     if (session) {
-      initSession(session);
+      console.log(`[App] Initializing session from URL: ${session}, isHost: ${hostParam}`);
+      initSession(session, hostParam);
     }
   }, [initSession]);
 
   const handleStartSession = () => {
     const newSession = crypto.randomUUID().slice(0, 8);
-    const newUrl = `${window.location.pathname}?session=${newSession}&host=true`;
+    const newUrl = `${window.location.origin}/?session=${newSession}&host=true`;
     window.history.pushState({ path: newUrl }, '', newUrl);
     setIsHost(true);
-    initSession(newSession);
+    console.log(`[App] Starting new session: ${newSession}`);
+    initSession(newSession, true);
   };
 
   const handleJoinSession = (id: string) => {
-    const newUrl = `${window.location.pathname}?session=${id}`;
+    const newUrl = `${window.location.origin}/join?session=${id}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
-    initSession(id);
+    console.log(`[App] Joining session: ${id}`);
+    initSession(id, false);
   };
 
   return (
