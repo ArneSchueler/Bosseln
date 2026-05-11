@@ -1,155 +1,60 @@
-import { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase"; // Assuming supabase client is at this path
+import { useStore } from "../store/useStore";
+import { Users, Loader2, Play } from "lucide-react";
 
-// A simple Player type for this component
-interface Player {
-  name: string;
-}
+export default function WaitingRoom() {
+  const players = useStore((state) => state.players);
 
-const WaitingRoom = () => {
-  // For demonstration, we'll use a hardcoded session ID.
-  // In a real app, this would come from a URL parameter, context, or local storage.
-  const sessionId = "bossel-vibe";
-
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [isGameStarted, setIsGameStarted] = useState(false);
-
-  useEffect(() => {
-    // Function to fetch players for the current session
-    const fetchPlayers = async () => {
-      const { data, error } = await supabase
-        .from("players")
-        .select("name")
-        .eq("session_id", sessionId);
-
-      if (error) {
-        console.error("Error fetching players:", error);
-      } else if (data) {
-        setPlayers(data);
-      }
-    };
-
-    // Function to check the initial game state
-    const checkGameState = async () => {
-      const { data, error } = await supabase
-        .from("game_state")
-        .select("is_game_started")
-        .eq("session_id", sessionId)
-        .single();
-
-      if (error) {
-        console.error("Error fetching game state:", error.message);
-      } else if (data && data.is_game_started) {
-        setIsGameStarted(true);
-      }
-    };
-
-    // Initial data fetch
-    fetchPlayers();
-    checkGameState();
-
-    // Set up Supabase real-time subscriptions
-    const playersSubscription = supabase
-      .channel(`public:players:session_id=eq.${sessionId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "players",
-          filter: `session_id=eq.${sessionId}`,
-        },
-        () => fetchPlayers(), // Re-fetch players on any change
-      )
-      .subscribe();
-
-    const gameStateSubscription = supabase
-      .channel(`public:game_state:session_id=eq.${sessionId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "game_state",
-          filter: `session_id=eq.${sessionId}`,
-        },
-        (payload) => {
-          if (payload.new.is_game_started) {
-            setIsGameStarted(true);
-          }
-        },
-      )
-      .subscribe();
-
-    // Cleanup function to remove subscriptions on component unmount
-    return () => {
-      supabase.removeChannel(playersSubscription);
-      supabase.removeChannel(gameStateSubscription);
-    };
-  }, [sessionId]);
-
-  if (isGameStarted) {
-    return (
-      <div className="text-center p-6 bg-white rounded-lg shadow-lg">
-        <h2 className="text-2xl font-bold text-green-600">
-          The game has started!
-        </h2>
-        <p className="mt-2 text-slate-700">Good luck and have fun!</p>
-      </div>
-    );
-  }
+  const playPlayerAudio = (url?: string) => {
+    if (url) {
+      const audio = new Audio(url);
+      audio.play();
+    }
+  };
 
   return (
-    <div className="text-center p-6 bg-white rounded-lg shadow-lg">
-      <h2 className="text-2xl font-bold mb-4 text-slate-800">
-        Waiting for the Host to Start
-      </h2>
-      <div className="animate-pulse my-6">
-        <svg
-          className="mx-auto h-16 w-16 text-green-500"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center">
+      <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-6 animate-pulse">
+        <Loader2 className="w-8 h-8 animate-spin" />
       </div>
-      <p className="text-slate-600 mb-6">
-        The host will begin the game shortly. In the meantime, here is who has
-        joined so far.
+
+      <h2 className="text-2xl font-bold text-slate-800 mb-2 text-center">
+        Waiting for Host
+      </h2>
+      <p className="text-slate-500 text-center mb-8">
+        The game will begin shortly once the host distributes teams and starts
+        the session.
       </p>
 
-      <div className="text-left bg-slate-50 p-4 rounded-md">
-        <h3 className="text-lg font-semibold mb-3 border-b border-slate-200 pb-2">
-          Joined Players ({players.length})
+      <div className="w-full">
+        <h3 className="font-semibold text-lg mb-3 border-b pb-2 flex justify-between items-center">
+          <span className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-slate-400" />
+            Lobby
+          </span>
+          <span className="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-full font-bold">
+            {players.length} Joined
+          </span>
         </h3>
-        <ul className="space-y-2 max-h-60 overflow-y-auto">
-          {players.length > 0 ? (
-            players.map((player, index) => (
-              <li
-                key={index}
-                className="p-3 bg-white rounded-md shadow-sm flex items-center"
-              >
-                <span className="font-medium text-slate-700">
-                  {player.name}
-                </span>
-              </li>
-            ))
-          ) : (
-            <li className="p-3 text-slate-500">
-              Waiting for players to join...
+
+        <ul className="space-y-2">
+          {players.map((player) => (
+            <li
+              key={player.id}
+              className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100"
+            >
+              <span className="font-medium text-slate-700">{player.name}</span>
+              {player.audioUrl && (
+                <button
+                  onClick={() => playPlayerAudio(player.audioUrl)}
+                  className="text-slate-400 hover:text-green-600 transition-colors"
+                >
+                  <Play className="w-5 h-5" />
+                </button>
+              )}
             </li>
-          )}
+          ))}
         </ul>
       </div>
     </div>
   );
-};
-
-export default WaitingRoom;
+}

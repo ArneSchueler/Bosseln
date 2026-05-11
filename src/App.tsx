@@ -1,27 +1,49 @@
-import { useState } from "react";
-import StartPage from "./components/StartPage";
+import { useEffect, useState } from "react";
 import PlayerRegistration from "./components/PlayerRegistration";
 import HostDashboard from "./components/HostDashboard";
+import ActiveGame from "./components/ActiveGame";
+import StartPage from "./components/StartPage";
 import WaitingRoom from "./components/WaitingRoom";
 import { useStore } from "./store/useStore";
 
 function App() {
-  const [view, setView] = useState<"start" | "host" | "join" | "waiting">(
-    "start",
-  );
+  const isGameStarted = useStore((state) => state.isGameStarted);
+  const initSession = useStore((state) => state.initSession);
+  const sessionId = useStore((state) => state.sessionId);
+  const myPlayerId = useStore((state) => state.myPlayerId);
+  const [isHost, setIsHost] = useState(false);
 
-  // We need to set the session ID in the store when joining
-  const setSessionId = useStore((state: any) => state.setSessionId);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get("session");
+    const hostParam = params.get("host") === "true";
+
+    if (hostParam) {
+      setIsHost(true);
+    }
+
+    if (session) {
+      console.log(
+        `[App] Initializing session from URL: ${session}, isHost: ${hostParam}`,
+      );
+      initSession(session, hostParam);
+    }
+  }, [initSession]);
 
   const handleStartSession = () => {
-    // Transition to Host Dashboard
-    setView("host");
+    const newSession = crypto.randomUUID().slice(0, 8);
+    const newUrl = `${window.location.origin}/?session=${newSession}&host=true`;
+    window.history.pushState({ path: newUrl }, "", newUrl);
+    setIsHost(true);
+    console.log(`[App] Starting new session: ${newSession}`);
+    initSession(newSession, true);
   };
 
-  const handleJoinSession = (sessionId: string) => {
-    // Save the entered session ID and transition to Registration
-    if (setSessionId) setSessionId(sessionId);
-    setView("join");
+  const handleJoinSession = (id: string) => {
+    const newUrl = `${window.location.origin}/join?session=${id}`;
+    window.history.pushState({ path: newUrl }, "", newUrl);
+    console.log(`[App] Joining session: ${id}`);
+    initSession(id, false);
   };
 
   return (
@@ -31,31 +53,36 @@ function App() {
       </header>
 
       <main className="container mx-auto max-w-md p-4 space-y-8">
-        {view === "start" && (
+        {!sessionId ? (
           <StartPage
             onStartSession={handleStartSession}
             onJoinSession={handleJoinSession}
           />
-        )}
+        ) : isGameStarted ? (
+          <ActiveGame />
+        ) : (
+          <>
+            {!myPlayerId && (
+              <section>
+                <PlayerRegistration />
+              </section>
+            )}
 
-        {view === "host" && <HostDashboard />}
+            {myPlayerId && !isHost && (
+              <section>
+                <WaitingRoom />
+              </section>
+            )}
 
-        {view === "join" && (
-          <div className="space-y-8">
-            <PlayerRegistration />
-            {/* Temporary link to test the waiting room */}
-            <div className="text-center pt-4 border-t border-slate-200">
-              <button
-                onClick={() => setView("waiting")}
-                className="text-sm font-medium text-slate-500 hover:text-slate-700 underline"
+            {isHost && (
+              <section
+                className={!myPlayerId ? "pt-8 border-t border-slate-200" : ""}
               >
-                Go to Waiting Room (Test)
-              </button>
-            </div>
-          </div>
+                <HostDashboard />
+              </section>
+            )}
+          </>
         )}
-
-        {view === "waiting" && <WaitingRoom />}
       </main>
     </div>
   );
