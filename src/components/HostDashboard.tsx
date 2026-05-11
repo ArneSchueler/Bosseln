@@ -19,19 +19,6 @@ export default function HostDashboard() {
   // URL to join
   const joinUrl = `${window.location.origin}/join?session=${sessionId}`;
 
-  useEffect(() => {
-    if (!sessionUuid) return;
-
-    // Fetch initial players just in case
-    supabase
-      .from("players")
-      .select("*")
-      .eq("session_id", sessionUuid)
-      .then(({ data }) => {
-        if (data) _setPlayersFromServer(data);
-      });
-  }, [sessionUuid, _setPlayersFromServer]);
-
   const hasTeams = players.some((p) => p.team);
 
   // Group players by team for display
@@ -45,6 +32,8 @@ export default function HostDashboard() {
     },
     {} as Record<number, typeof players>,
   );
+
+  const unassignedPlayers = players.filter((p) => !p.team);
 
   const playPlayerAudio = (url?: string) => {
     if (url) {
@@ -134,6 +123,33 @@ export default function HostDashboard() {
                 </ul>
               </div>
             ))}
+
+            {/* Show any players that joined late and don't have a team yet */}
+            {unassignedPlayers.length > 0 && (
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <div className="bg-slate-100 px-4 py-2 font-semibold text-slate-700">
+                  Unassigned Players
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {unassignedPlayers.map((player) => (
+                    <li
+                      key={player.id}
+                      className="flex justify-between items-center p-3 bg-white"
+                    >
+                      <span>{player.name}</span>
+                      {player.audioUrl && (
+                        <button
+                          onClick={() => playPlayerAudio(player.audioUrl)}
+                          className="text-slate-400 hover:text-green-600 transition-colors"
+                        >
+                          <Play className="w-5 h-5" />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </div>

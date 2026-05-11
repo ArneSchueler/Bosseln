@@ -39,6 +39,33 @@ function App() {
   useEffect(() => {
     if (!sessionUuid) return;
 
+    // 1. Fetch initial players globally to ensure the list is accurate
+    supabase
+      .from("players")
+      .select("*")
+      .eq("session_id", sessionUuid)
+      .then(({ data }) => {
+        if (data && _setPlayersFromServer) _setPlayersFromServer(data);
+      });
+
+    // 2. Fetch initial game state
+    supabase
+      .from("game_state")
+      .select("*")
+      .eq("session_id", sessionUuid)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          useStore.setState({
+            isGameStarted: data.is_game_started,
+            teamCount: data.team_count,
+            activeTeamId: data.active_team_id,
+            activePlayerIndexByTeam: data.active_player_index_by_team,
+            scores: data.scores,
+          });
+        }
+      });
+
     const channel = supabase
       .channel(`sync-app-${sessionUuid}`)
       .on(
