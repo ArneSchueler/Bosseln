@@ -53,11 +53,12 @@ function App() {
           if (payload.new) {
             console.log("Realtime game_state update:", payload.new);
             useStore.setState({
-              isGameStarted: payload.new.is_game_started,
-              teamCount: payload.new.team_count,
-              activeTeamId: payload.new.active_team_id,
-              activePlayerIndexByTeam: payload.new.active_player_index_by_team,
-              scores: payload.new.scores,
+              isGameStarted: (payload.new as any)?.is_game_started,
+              teamCount: (payload.new as any)?.team_count,
+              activeTeamId: (payload.new as any)?.active_team_id,
+              activePlayerIndexByTeam: (payload.new as any)
+                ?.active_player_index_by_team,
+              scores: (payload.new as any)?.scores,
             });
           }
         },
