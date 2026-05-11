@@ -1,13 +1,11 @@
-import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useStore } from '../store/useStore';
 import { Users, Shuffle, Link as LinkIcon, Play } from 'lucide-react';
 
 export default function HostDashboard() {
-  const { players, teamCount, setTeamCount, distributeTeams, startGame } = useStore();
-  const [sessionId] = useState(() => crypto.randomUUID().slice(0, 8)); // Generate a random session ID for UI purposes
+  const { players, teamCount, setTeamCount, distributeTeams, startGame, sessionId } = useStore();
   
-  // URL to join (in a real app, this would be a specific route)
+  // URL to join
   const joinUrl = `${window.location.origin}?session=${sessionId}`;
 
   const hasTeams = players.some(p => p.team);

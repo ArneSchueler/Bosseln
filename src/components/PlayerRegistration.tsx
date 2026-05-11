@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { Mic, Square, Check, Play, UserPlus } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { supabase } from '../lib/supabase';
 
 export default function PlayerRegistration() {
   const [name, setName] = useState('');
@@ -58,18 +59,31 @@ export default function PlayerRegistration() {
     }
   };
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (!name.trim()) {
       alert('Please enter your name.');
       return;
     }
     
     const newId = crypto.randomUUID();
-    addPlayer({
+    let finalAudioUrl = audioUrl || undefined;
+
+    if (audioBlob) {
+      const fileName = `${newId}.webm`;
+      const { data, error } = await supabase.storage.from('audio').upload(fileName, audioBlob);
+      if (!error && data) {
+        const { data: publicUrlData } = supabase.storage.from('audio').getPublicUrl(fileName);
+        finalAudioUrl = publicUrlData.publicUrl;
+      } else {
+        console.error("Audio upload failed:", error);
+      }
+    }
+
+    await addPlayer({
       id: newId,
       name: name.trim(),
       audioBlob: audioBlob,
-      audioUrl: audioUrl || undefined,
+      audioUrl: finalAudioUrl,
     });
     setMyPlayerId(newId);
     
