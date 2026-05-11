@@ -12,6 +12,7 @@ export default function PlayerRegistration() {
   const audioChunksRef = useRef<Blob[]>([]);
   
   const addPlayer = useStore((state) => state.addPlayer);
+  const setMyPlayerId = useStore((state) => state.setMyPlayerId);
 
   const startRecording = async () => {
     try {
@@ -63,12 +64,14 @@ export default function PlayerRegistration() {
       return;
     }
     
+    const newId = crypto.randomUUID();
     addPlayer({
-      id: crypto.randomUUID(),
+      id: newId,
       name: name.trim(),
       audioBlob: audioBlob,
       audioUrl: audioUrl || undefined,
     });
+    setMyPlayerId(newId);
     
     // Reset form
     setName('');

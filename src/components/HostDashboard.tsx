@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore';
 import { Users, Shuffle, Link as LinkIcon, Play } from 'lucide-react';
 
 export default function HostDashboard() {
-  const { players, teamCount, setTeamCount, distributeTeams } = useStore();
+  const { players, teamCount, setTeamCount, distributeTeams, startGame } = useStore();
   const [sessionId] = useState(() => crypto.randomUUID().slice(0, 8)); // Generate a random session ID for UI purposes
   
   // URL to join (in a real app, this would be a specific route)
@@ -121,6 +121,17 @@ export default function HostDashboard() {
           </button>
         </div>
       </div>
+      
+      {hasTeams && (
+        <div className="mt-6">
+          <button
+            onClick={startGame}
+            className="w-full flex justify-center items-center py-4 bg-green-600 text-white text-lg font-bold rounded-xl shadow-md hover:bg-green-700 transition-colors"
+          >
+            Start Game!
+          </button>
+        </div>
+      )}
     </div>
   );
 }
