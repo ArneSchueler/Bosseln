@@ -1,45 +1,27 @@
-import { useEffect, useState } from 'react';
-import PlayerRegistration from './components/PlayerRegistration';
-import HostDashboard from './components/HostDashboard';
-import ActiveGame from './components/ActiveGame';
-import StartPage from './components/StartPage';
-import { useStore } from './store/useStore';
+import { useState } from "react";
+import StartPage from "./components/StartPage";
+import PlayerRegistration from "./components/PlayerRegistration";
+import HostDashboard from "./components/HostDashboard";
+import WaitingRoom from "./components/WaitingRoom";
+import { useStore } from "./store/useStore";
 
 function App() {
-  const isGameStarted = useStore((state) => state.isGameStarted);
-  const initSession = useStore((state) => state.initSession);
-  const sessionId = useStore((state) => state.sessionId);
-  const [isHost, setIsHost] = useState(false);
+  const [view, setView] = useState<"start" | "host" | "join" | "waiting">(
+    "start",
+  );
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const session = params.get('session');
-    const hostParam = params.get('host') === 'true';
-    
-    if (hostParam) {
-      setIsHost(true);
-    }
-    
-    if (session) {
-      console.log(`[App] Initializing session from URL: ${session}, isHost: ${hostParam}`);
-      initSession(session, hostParam);
-    }
-  }, [initSession]);
+  // We need to set the session ID in the store when joining
+  const setSessionId = useStore((state: any) => state.setSessionId);
 
   const handleStartSession = () => {
-    const newSession = crypto.randomUUID().slice(0, 8);
-    const newUrl = `${window.location.origin}/?session=${newSession}&host=true`;
-    window.history.pushState({ path: newUrl }, '', newUrl);
-    setIsHost(true);
-    console.log(`[App] Starting new session: ${newSession}`);
-    initSession(newSession, true);
+    // Transition to Host Dashboard
+    setView("host");
   };
 
-  const handleJoinSession = (id: string) => {
-    const newUrl = `${window.location.origin}/join?session=${id}`;
-    window.history.pushState({ path: newUrl }, '', newUrl);
-    console.log(`[App] Joining session: ${id}`);
-    initSession(id, false);
+  const handleJoinSession = (sessionId: string) => {
+    // Save the entered session ID and transition to Registration
+    if (setSessionId) setSessionId(sessionId);
+    setView("join");
   };
 
   return (
@@ -47,25 +29,33 @@ function App() {
       <header className="bg-green-600 text-white p-4 shadow-md">
         <h1 className="text-2xl font-bold text-center">Bossel-Vibe</h1>
       </header>
-      
-      <main className="container mx-auto max-w-md p-4 space-y-8">
-        {!sessionId ? (
-          <StartPage onStartSession={handleStartSession} onJoinSession={handleJoinSession} />
-        ) : isGameStarted ? (
-          <ActiveGame />
-        ) : (
-          <>
-            <section>
-              <PlayerRegistration />
-            </section>
 
-            {isHost && (
-              <section className="pt-8 border-t border-slate-200">
-                <HostDashboard />
-              </section>
-            )}
-          </>
+      <main className="container mx-auto max-w-md p-4 space-y-8">
+        {view === "start" && (
+          <StartPage
+            onStartSession={handleStartSession}
+            onJoinSession={handleJoinSession}
+          />
         )}
+
+        {view === "host" && <HostDashboard />}
+
+        {view === "join" && (
+          <div className="space-y-8">
+            <PlayerRegistration />
+            {/* Temporary link to test the waiting room */}
+            <div className="text-center pt-4 border-t border-slate-200">
+              <button
+                onClick={() => setView("waiting")}
+                className="text-sm font-medium text-slate-500 hover:text-slate-700 underline"
+              >
+                Go to Waiting Room (Test)
+              </button>
+            </div>
+          </div>
+        )}
+
+        {view === "waiting" && <WaitingRoom />}
       </main>
     </div>
   );
