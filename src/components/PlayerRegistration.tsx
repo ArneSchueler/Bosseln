@@ -1,17 +1,17 @@
-import { useState, useRef } from 'react';
-import { Mic, Square, Check, Play, UserPlus } from 'lucide-react';
-import { useStore } from '../store/useStore';
-import { supabase } from '../lib/supabase';
+import { useState, useRef } from "react";
+import { Mic, Square, Check, Play, UserPlus } from "lucide-react";
+import { useStore } from "../store/useStore";
+import { supabase } from "../lib/supabase";
 
 export default function PlayerRegistration() {
-  const [name, setName] = useState('');
+  const [name, setName] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  
+
   const addPlayer = useStore((state) => state.addPlayer);
   const setMyPlayerId = useStore((state) => state.setMyPlayerId);
   const sessionId = useStore((state) => state.sessionId);
@@ -30,7 +30,7 @@ export default function PlayerRegistration() {
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         setAudioBlob(blob);
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
@@ -39,8 +39,8 @@ export default function PlayerRegistration() {
       mediaRecorder.start();
       setIsRecording(true);
     } catch (error) {
-      console.error('Error accessing microphone:', error);
-      alert('Could not access microphone.');
+      console.error("Error accessing microphone:", error);
+      alert("Could not access microphone.");
     }
   };
 
@@ -49,7 +49,9 @@ export default function PlayerRegistration() {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       // Stop all tracks to release microphone
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      mediaRecorderRef.current.stream
+        .getTracks()
+        .forEach((track) => track.stop());
     }
   };
 
@@ -62,59 +64,49 @@ export default function PlayerRegistration() {
 
   const handleJoin = async () => {
     if (!name.trim()) {
-      alert('Please enter your name.');
+      alert("Please enter your name.");
       return;
     }
 
     if (!sessionId) {
       console.error("Join aborted: No sessionId present in the store.");
-      alert('Session error. Please refresh the page.');
+      alert("Session error. Please refresh the page.");
       return;
     }
-    
+
     console.log("--- Starting Player Registration ---");
-    console.log("1. Verifying session mapping for session code:", sessionId);
 
-    // Get the actual session UUID from the session_code
-    const { data: sessionData, error: sessionError } = await supabase
-      .from('sessions')
-      .select('id')
-      .eq('session_code', sessionId)
-      .single();
-
-    if (sessionError || !sessionData) {
-      console.error("Database Error: Failed to find session UUID for code", sessionId, sessionError);
-      alert("Session not found. Make sure the host has created it properly.");
-      return;
-    }
-
-    const sessionUuid = sessionData.id;
-    console.log("Success: Found session UUID:", sessionUuid);
-    
     const newId = crypto.randomUUID();
     let finalAudioUrl = audioUrl || undefined;
 
     if (audioBlob) {
-      console.log("2. Attempting to upload audio blob to Supabase Storage...");
+      console.log("1. Attempting to upload audio blob to Supabase Storage...");
       const fileName = `${newId}.webm`;
-      const { data, error } = await supabase.storage.from('audio').upload(fileName, audioBlob);
-      
+      const { data, error } = await supabase.storage
+        .from("audio")
+        .upload(fileName, audioBlob);
+
       if (!error && data) {
         console.log("Success: Audio uploaded successfully:", data);
-        const { data: publicUrlData } = supabase.storage.from('audio').getPublicUrl(fileName);
+        const { data: publicUrlData } = supabase.storage
+          .from("audio")
+          .getPublicUrl(fileName);
         finalAudioUrl = publicUrlData.publicUrl;
         console.log("Generated public audio URL:", finalAudioUrl);
       } else {
-        console.error("Storage Error: Audio upload failed. Proceeding without audio.", error);
+        console.error(
+          "Storage Error: Audio upload failed. Proceeding without audio.",
+          error,
+        );
       }
     } else {
-      console.log("2. No audio blob recorded. Skipping upload.");
+      console.log("1. No audio blob recorded. Skipping upload.");
     }
 
-    console.log("3. Inserting new player into the 'players' table...");
-    const { error: insertError } = await supabase.from('players').insert({
+    console.log("2. Inserting new player into the 'players' table...");
+    const { error: insertError } = await supabase.from("players").insert({
       id: newId,
-      session_id: sessionUuid,
+      session_id: sessionId,
       name: name.trim(),
       audio_url: finalAudioUrl,
     });
@@ -126,14 +118,6 @@ export default function PlayerRegistration() {
     }
 
     console.log("Success: Player inserted into database!");
-    
-    // Broadcast update to all clients
-    supabase.channel(`game-${sessionId}`).send({
-      type: "broadcast",
-      event: "players-updated",
-      payload: { joined: newId }
-    });
-
     console.log("--- Player Registration Complete ---");
 
     // Optimistically update the store
@@ -144,12 +128,12 @@ export default function PlayerRegistration() {
       audioUrl: finalAudioUrl,
     });
     setMyPlayerId(newId);
-    
+
     // Reset form
-    setName('');
+    setName("");
     setAudioBlob(null);
     setAudioUrl(null);
-    alert('Joined successfully!');
+    alert("Joined successfully!");
   };
 
   return (
@@ -158,10 +142,13 @@ export default function PlayerRegistration() {
         <UserPlus className="w-5 h-5 text-green-600" />
         Join Game
       </h2>
-      
+
       <div className="space-y-4">
         <div>
-          <label htmlFor="playerName" className="block text-sm font-medium text-slate-700 mb-1">
+          <label
+            htmlFor="playerName"
+            className="block text-sm font-medium text-slate-700 mb-1"
+          >
             Your Name
           </label>
           <input
@@ -178,7 +165,7 @@ export default function PlayerRegistration() {
           <span className="block text-sm font-medium text-slate-700 mb-2">
             Record a cheer (optional)
           </span>
-          
+
           <div className="flex items-center gap-3">
             {!isRecording && !audioBlob && (
               <button
@@ -189,7 +176,7 @@ export default function PlayerRegistration() {
                 Record
               </button>
             )}
-            
+
             {isRecording && (
               <button
                 onClick={stopRecording}
