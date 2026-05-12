@@ -100,19 +100,20 @@ export const useStore = create<GameState>((set, get) => ({
 
     // 3. Subscribe to Realtime changes
     const channel = supabase.channel(`game-${sessionId}`);
-
-    channel.on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "game_state",
-        filter: `session_id=eq.${sessionId}`,
-      },
-      (payload) => {
-        if (payload.new) get()._setGameStateFromServer(payload.new);
-      },
-    );
+    
+    channel
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "game_state",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        (payload) => {
+          if (payload.new) get()._setGameStateFromServer(payload.new);
+        },
+      );
 
     if (sessionUuid) {
       channel.on(
@@ -123,45 +124,17 @@ export const useStore = create<GameState>((set, get) => ({
           table: "players",
           filter: `session_id=eq.${sessionUuid}`,
         },
-        (payload) => {
-          const state = get();
-          if (payload.eventType === "INSERT") {
-            const p = payload.new;
-            const newPlayer: Player = {
-              id: p.id,
-              session_id: p.session_id,
-              name: p.name,
-              audioUrl: p.audio_url,
-              team: p.team,
-            };
-            if (!state.players.find((existing) => existing.id === p.id)) {
-              set({ players: [...state.players, newPlayer] });
-            }
-          } else if (payload.eventType === "UPDATE") {
-            const p = payload.new;
-            const updated = state.players.map((existing) =>
-              existing.id === p.id
-                ? {
-                    ...existing,
-                    name: p.name,
-                    audioUrl: p.audio_url,
-                    team: p.team,
-                  }
-                : existing,
-            );
-            set({ players: updated });
-          } else if (payload.eventType === "DELETE") {
-            const oldId = payload.old.id;
-            set({
-              players: state.players.filter(
-                (existing) => existing.id !== oldId,
-              ),
-            });
-          }
+        async () => {
+          // Re-fetch all players for this session when any player joins or updates
+          const { data } = await supabase
+            .from("players")
+            .select("*")
+            .eq("session_id", sessionUuid);
+          if (data) get()._setPlayersFromServer(data);
         },
       );
     }
-
+    
     channel.subscribe();
   },
 
