@@ -1,5 +1,5 @@
-import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { create } from "zustand";
+import { supabase } from "../lib/supabase";
 
 export interface Player {
   id: string;
@@ -29,7 +29,7 @@ interface GameState {
   startGame: () => Promise<void>;
   nextTurn: () => Promise<void>;
   addScore: (teamId: number, points: number) => Promise<void>;
-  
+
   // Handlers for remote updates
   _setGameStateFromServer: (payload: any) => void;
   _setPlayersFromServer: (payload: any[]) => void;
@@ -48,15 +48,19 @@ export const useStore = create<GameState>((set, get) => ({
 
   initSession: async (sessionId, isHost = false) => {
     set({ sessionId });
-    
+
     let sessionUuid = null;
 
     if (isHost) {
       // 1. Host creates a new session in the `sessions` table
-      const { data, error } = await supabase.from('sessions').insert({
-        session_code: sessionId,
-        is_active: true
-      }).select('id').single();
+      const { data, error } = await supabase
+        .from("sessions")
+        .insert({
+          session_code: sessionId,
+          is_active: true,
+        })
+        .select("id")
+        .single();
 
       if (data) {
         sessionUuid = data.id;
@@ -65,7 +69,11 @@ export const useStore = create<GameState>((set, get) => ({
       }
     } else {
       // 2. Player joins, fetch existing session UUID
-      const { data } = await supabase.from('sessions').select('id').eq('session_code', sessionId).single();
+      const { data } = await supabase
+        .from("sessions")
+        .select("id")
+        .eq("session_code", sessionId)
+        .single();
       if (data) {
         sessionUuid = data.id;
       }
@@ -77,23 +85,84 @@ export const useStore = create<GameState>((set, get) => ({
 
     // 2. Fetch initial data (Legacy support for now, ideally migrate all game_state logic soon)
     const [{ data: gameData }, { data: playersData }] = await Promise.all([
-      supabase.from('game_state').select('*').eq('session_id', sessionId).single(),
-      sessionUuid ? supabase.from('players').select('*').eq('session_id', sessionUuid) : { data: [] }
+      supabase
+        .from("game_state")
+        .select("*")
+        .eq("session_id", sessionId)
+        .single(),
+      sessionUuid
+        ? supabase.from("players").select("*").eq("session_id", sessionUuid)
+        : { data: [] },
     ]);
 
     if (gameData) get()._setGameStateFromServer(gameData);
     if (playersData) get()._setPlayersFromServer(playersData);
 
     // 3. Subscribe to Realtime changes
-    supabase.channel(`game-${sessionId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'game_state', filter: `session_id=eq.${sessionId}` },
+    const channel = supabase.channel(`game-${sessionId}`);
+
+    channel.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "game_state",
+        filter: `session_id=eq.${sessionId}`,
+      },
+      (payload) => {
+        if (payload.new) get()._setGameStateFromServer(payload.new);
+      },
+    );
+
+    if (sessionUuid) {
+      channel.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: `session_id=eq.${sessionUuid}`,
+        },
         (payload) => {
-          if (payload.new) get()._setGameStateFromServer(payload.new);
-        }
-      )
-      .subscribe();
+          const state = get();
+          if (payload.eventType === "INSERT") {
+            const p = payload.new;
+            const newPlayer: Player = {
+              id: p.id,
+              session_id: p.session_id,
+              name: p.name,
+              audioUrl: p.audio_url,
+              team: p.team,
+            };
+            if (!state.players.find((existing) => existing.id === p.id)) {
+              set({ players: [...state.players, newPlayer] });
+            }
+          } else if (payload.eventType === "UPDATE") {
+            const p = payload.new;
+            const updated = state.players.map((existing) =>
+              existing.id === p.id
+                ? {
+                    ...existing,
+                    name: p.name,
+                    audioUrl: p.audio_url,
+                    team: p.team,
+                  }
+                : existing,
+            );
+            set({ players: updated });
+          } else if (payload.eventType === "DELETE") {
+            const oldId = payload.old.id;
+            set({
+              players: state.players.filter(
+                (existing) => existing.id !== oldId,
+              ),
+            });
+          }
+        },
+      );
+    }
+
+    channel.subscribe();
   },
 
   _setGameStateFromServer: (payload) => {
@@ -102,7 +171,7 @@ export const useStore = create<GameState>((set, get) => ({
       isGameStarted: payload.is_game_started ?? false,
       activeTeamId: payload.active_team_id ?? null,
       activePlayerIndexByTeam: payload.active_player_index_by_team ?? {},
-      scores: payload.scores ?? {}
+      scores: payload.scores ?? {},
     });
   },
 
@@ -113,8 +182,8 @@ export const useStore = create<GameState>((set, get) => ({
         session_id: p.session_id,
         name: p.name,
         audioUrl: p.audio_url,
-        team: p.team
-      }))
+        team: p.team,
+      })),
     });
   },
 
@@ -124,14 +193,17 @@ export const useStore = create<GameState>((set, get) => ({
     // Only update local state, DB insert is handled in PlayerRegistration
     set((state) => ({ players: [...state.players, player] }));
   },
-  
+
   setTeamCount: async (count) => {
     const state = get();
     if (!state.sessionId) return;
     set({ teamCount: count });
-    await supabase.from('game_state').update({ team_count: count }).eq('session_id', state.sessionId);
+    await supabase
+      .from("game_state")
+      .update({ team_count: count })
+      .eq("session_id", state.sessionId);
   },
-  
+
   distributeTeams: async () => {
     const state = get();
     const { players, teamCount, sessionId } = state;
@@ -147,20 +219,20 @@ export const useStore = create<GameState>((set, get) => ({
     set({ players: playersWithTeams });
 
     // Remote update players
-    const upserts = playersWithTeams.map(p => ({
+    const upserts = playersWithTeams.map((p) => ({
       id: p.id,
       session_id: sessionId,
       name: p.name,
       audio_url: p.audioUrl,
-      team: p.team
+      team: p.team,
     }));
-    await supabase.from('players').upsert(upserts);
+    await supabase.from("players").upsert(upserts);
   },
 
   startGame: async () => {
     const state = get();
     const { players, teamCount, sessionId } = state;
-    const hasTeams = players.some(p => p.team);
+    const hasTeams = players.some((p) => p.team);
     if (!sessionId || !hasTeams || players.length === 0) return;
 
     const initialIndices: Record<number, number> = {};
@@ -184,22 +256,27 @@ export const useStore = create<GameState>((set, get) => ({
       scores: initialScores,
     });
 
-    await supabase.from('game_state').update(updates).eq('session_id', sessionId);
+    await supabase
+      .from("game_state")
+      .update(updates)
+      .eq("session_id", sessionId);
   },
 
   nextTurn: async () => {
     const state = get();
-    if (!state.sessionId || !state.isGameStarted || state.activeTeamId === null) return;
+    if (!state.sessionId || !state.isGameStarted || state.activeTeamId === null)
+      return;
 
     const currentTeamId = state.activeTeamId;
-    const teamPlayers = state.players.filter(p => p.team === currentTeamId);
-    
+    const teamPlayers = state.players.filter((p) => p.team === currentTeamId);
+
     const currentIdx = state.activePlayerIndexByTeam[currentTeamId] || 0;
-    const nextIdx = teamPlayers.length > 0 ? (currentIdx + 1) % teamPlayers.length : 0;
-    
+    const nextIdx =
+      teamPlayers.length > 0 ? (currentIdx + 1) % teamPlayers.length : 0;
+
     const newIndices = {
       ...state.activePlayerIndexByTeam,
-      [currentTeamId]: nextIdx
+      [currentTeamId]: nextIdx,
     };
 
     let nextTeamId = currentTeamId + 1;
@@ -209,26 +286,32 @@ export const useStore = create<GameState>((set, get) => ({
 
     set({
       activePlayerIndexByTeam: newIndices,
-      activeTeamId: nextTeamId
+      activeTeamId: nextTeamId,
     });
 
-    await supabase.from('game_state').update({
-      active_player_index_by_team: newIndices,
-      active_team_id: nextTeamId
-    }).eq('session_id', state.sessionId);
+    await supabase
+      .from("game_state")
+      .update({
+        active_player_index_by_team: newIndices,
+        active_team_id: nextTeamId,
+      })
+      .eq("session_id", state.sessionId);
   },
 
   addScore: async (teamId, points) => {
     const state = get();
     if (!state.sessionId) return;
-    
+
     const newScores = {
       ...state.scores,
-      [teamId]: (state.scores[teamId] || 0) + points
+      [teamId]: (state.scores[teamId] || 0) + points,
     };
 
     set({ scores: newScores });
 
-    await supabase.from('game_state').update({ scores: newScores }).eq('session_id', state.sessionId);
+    await supabase
+      .from("game_state")
+      .update({ scores: newScores })
+      .eq("session_id", state.sessionId);
   },
 }));
