@@ -3,14 +3,12 @@ import PlayerRegistration from "./components/PlayerRegistration";
 import HostDashboard from "./components/HostDashboard";
 import ActiveGame from "./components/ActiveGame";
 import StartPage from "./components/StartPage";
-import WaitingRoom from "./components/WaitingRoom";
 import { useStore } from "./store/useStore";
 
 function App() {
   const isGameStarted = useStore((state) => state.isGameStarted);
   const initSession = useStore((state) => state.initSession);
   const sessionId = useStore((state) => state.sessionId);
-  const myPlayerId = useStore((state) => state.myPlayerId);
   const [isHost, setIsHost] = useState(false);
 
   useEffect(() => {
