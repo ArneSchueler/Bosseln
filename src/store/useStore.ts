@@ -13,6 +13,7 @@ export interface Player {
 
 interface GameState {
   sessionId: string | null;
+  sessionUuid: string | null;
   players: Player[];
   teamCount: number;
   isGameStarted: boolean;
@@ -39,6 +40,7 @@ export const useStore = create<GameState>()(
   persist(
     (set, get) => ({
       sessionId: null,
+      sessionUuid: null,
       players: [],
       teamCount: 2,
       isGameStarted: false,
@@ -50,16 +52,48 @@ export const useStore = create<GameState>()(
       initSession: async (sessionId, isHost = false) => {
         set({ sessionId });
 
+        let sessionUuid = null;
+
         if (isHost) {
-          // 1. Ensure game_state exists so players can safely join
-          const { error } = await supabase.from("game_state").insert({
-            session_id: sessionId,
-            team_count: 2,
-            is_game_started: false,
-          });
-          if (error && error.code !== "23505") {
-            console.error("Failed to create game_state:", error);
+          // 1. Host creates a new session in the `sessions` table
+          const { data, error } = await supabase
+            .from("sessions")
+            .insert({
+              session_code: sessionId,
+              is_active: true,
+            })
+            .select("id")
+            .single();
+
+          if (data) {
+            sessionUuid = data.id;
+          } else {
+            // Fallback: session might already exist (e.g. StrictMode double mount)
+            const { data: existingData } = await supabase
+              .from("sessions")
+              .select("id")
+              .eq("session_code", sessionId)
+              .single();
+            if (existingData) {
+              sessionUuid = existingData.id;
+            } else if (error) {
+              console.error("Failed to create session:", error);
+            }
           }
+        } else {
+          // 2. Player joins, fetch existing session UUID
+          const { data } = await supabase
+            .from("sessions")
+            .select("id")
+            .eq("session_code", sessionId)
+            .single();
+          if (data) {
+            sessionUuid = data.id;
+          }
+        }
+
+        if (sessionUuid) {
+          set({ sessionUuid });
         }
 
         // 2. Fetch initial data (Legacy support for now, ideally migrate all game_state logic soon)
@@ -69,7 +103,9 @@ export const useStore = create<GameState>()(
             .select("*")
             .eq("session_id", sessionId)
             .single(),
-          supabase.from("players").select("*").eq("session_id", sessionId),
+          sessionUuid
+            ? supabase.from("players").select("*").eq("session_id", sessionUuid)
+            : { data: [] },
         ]);
 
         if (gameData) get()._updateGameStateFromServer(gameData);
@@ -98,31 +134,33 @@ export const useStore = create<GameState>()(
             get()._updateGameStateFromServer(payload.payload);
           });
 
-        channel.on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "players",
-            filter: `session_id=eq.${sessionId}`,
-          },
-          async () => {
-            // Re-fetch all players for this session when any player joins or updates
+        if (sessionUuid) {
+          channel.on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "players",
+              filter: `session_id=eq.${sessionUuid}`,
+            },
+            async () => {
+              // Re-fetch all players for this session when any player joins or updates
+              const { data } = await supabase
+                .from("players")
+                .select("*")
+                .eq("session_id", sessionUuid);
+              if (data) get()._setPlayersFromServer(data);
+            },
+          );
+
+          channel.on("broadcast", { event: "players-updated" }, async () => {
             const { data } = await supabase
               .from("players")
               .select("*")
-              .eq("session_id", sessionId);
+              .eq("session_id", sessionUuid);
             if (data) get()._setPlayersFromServer(data);
-          },
-        );
-
-        channel.on("broadcast", { event: "players-updated" }, async () => {
-          const { data } = await supabase
-            .from("players")
-            .select("*")
-            .eq("session_id", sessionId);
-          if (data) get()._setPlayersFromServer(data);
-        });
+          });
+        }
 
         channel.subscribe();
       },
@@ -186,8 +224,14 @@ export const useStore = create<GameState>()(
 
       distributeTeams: async () => {
         const state = get();
-        const { players, teamCount, sessionId } = state;
-        if (!sessionId || players.length === 0 || teamCount <= 0) return;
+        const { players, teamCount, sessionId, sessionUuid } = state;
+        if (
+          !sessionId ||
+          !sessionUuid ||
+          players.length === 0 ||
+          teamCount <= 0
+        )
+          return;
 
         const shuffled = [...players].sort(() => Math.random() - 0.5);
         const playersWithTeams = shuffled.map((player, index) => ({
@@ -201,7 +245,7 @@ export const useStore = create<GameState>()(
         // Remote update players
         const upserts = playersWithTeams.map((p) => ({
           id: p.id,
-          session_id: sessionId,
+          session_id: sessionUuid,
           name: p.name,
           audio_url: p.audioUrl,
           team: p.team,
@@ -331,6 +375,7 @@ export const useStore = create<GameState>()(
       name: "bosseln-store",
       partialize: (state) => ({
         sessionId: state.sessionId,
+        sessionUuid: state.sessionUuid,
         myPlayerId: state.myPlayerId,
         players: state.players.map((p) => ({ ...p, audioBlob: null })),
         teamCount: state.teamCount,

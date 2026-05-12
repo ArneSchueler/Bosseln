@@ -75,12 +75,33 @@ export default function PlayerRegistration() {
     }
 
     console.log("--- Starting Player Registration ---");
+    console.log("1. Verifying session mapping for session code:", sessionId);
+
+    // Get the actual session UUID from the session_code
+    const { data: sessionData, error: sessionError } = await supabase
+      .from("sessions")
+      .select("id")
+      .eq("session_code", sessionId)
+      .single();
+
+    if (sessionError || !sessionData) {
+      console.error(
+        "Database Error: Failed to find session UUID for code",
+        sessionId,
+        sessionError,
+      );
+      alert("Session not found. Make sure the host has created it properly.");
+      return;
+    }
+
+    const sessionUuid = sessionData.id;
+    console.log("Success: Found session UUID:", sessionUuid);
 
     const newId = crypto.randomUUID();
     let finalAudioUrl = audioUrl || undefined;
 
     if (audioBlob) {
-      console.log("1. Attempting to upload audio blob to Supabase Storage...");
+      console.log("2. Attempting to upload audio blob to Supabase Storage...");
       const fileName = `${newId}.webm`;
       const { data, error } = await supabase.storage
         .from("audio")
@@ -100,13 +121,13 @@ export default function PlayerRegistration() {
         );
       }
     } else {
-      console.log("1. No audio blob recorded. Skipping upload.");
+      console.log("2. No audio blob recorded. Skipping upload.");
     }
 
-    console.log("2. Inserting new player into the 'players' table...");
+    console.log("3. Inserting new player into the 'players' table...");
     const { error: insertError } = await supabase.from("players").insert({
       id: newId,
-      session_id: sessionId,
+      session_id: sessionUuid,
       name: name.trim(),
       audio_url: finalAudioUrl,
     });
@@ -118,6 +139,14 @@ export default function PlayerRegistration() {
     }
 
     console.log("Success: Player inserted into database!");
+
+    // Broadcast update to all clients
+    supabase.channel(`game-${sessionId}`).send({
+      type: "broadcast",
+      event: "players-updated",
+      payload: { joined: newId },
+    });
+
     console.log("--- Player Registration Complete ---");
 
     // Optimistically update the store
