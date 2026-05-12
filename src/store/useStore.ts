@@ -64,8 +64,18 @@ export const useStore = create<GameState>((set, get) => ({
 
       if (data) {
         sessionUuid = data.id;
-      } else if (error) {
-        console.error("Failed to create session:", error);
+      } else {
+        // Fallback: session might already exist (e.g. StrictMode double mount)
+        const { data: existingData } = await supabase
+          .from("sessions")
+          .select("id")
+          .eq("session_code", sessionId)
+          .single();
+        if (existingData) {
+          sessionUuid = existingData.id;
+        } else if (error) {
+          console.error("Failed to create session:", error);
+        }
       }
     } else {
       // 2. Player joins, fetch existing session UUID
@@ -132,6 +142,18 @@ export const useStore = create<GameState>((set, get) => ({
             .eq("session_id", sessionUuid);
           if (data) get()._setPlayersFromServer(data);
         },
+      );
+
+      channel.on(
+        "broadcast",
+        { event: "players-updated" },
+        async () => {
+          const { data } = await supabase
+            .from("players")
+            .select("*")
+            .eq("session_id", sessionUuid);
+          if (data) get()._setPlayersFromServer(data);
+        }
       );
     }
     

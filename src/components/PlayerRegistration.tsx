@@ -126,6 +126,14 @@ export default function PlayerRegistration() {
     }
 
     console.log("Success: Player inserted into database!");
+    
+    // Broadcast update to all clients
+    supabase.channel(`game-${sessionId}`).send({
+      type: "broadcast",
+      event: "players-updated",
+      payload: { joined: newId }
+    });
+
     console.log("--- Player Registration Complete ---");
 
     // Optimistically update the store
