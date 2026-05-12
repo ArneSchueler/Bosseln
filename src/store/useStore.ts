@@ -31,7 +31,7 @@ interface GameState {
   addScore: (teamId: number, points: number) => Promise<void>;
 
   // Handlers for remote updates
-  _setGameStateFromServer: (payload: any) => void;
+  _updateGameStateFromServer: (payload: any) => void;
   _setPlayersFromServer: (payload: any[]) => void;
 }
 
@@ -105,12 +105,12 @@ export const useStore = create<GameState>((set, get) => ({
         : { data: [] },
     ]);
 
-    if (gameData) get()._setGameStateFromServer(gameData);
+    if (gameData) get()._updateGameStateFromServer(gameData);
     if (playersData) get()._setPlayersFromServer(playersData);
 
     // 3. Subscribe to Realtime changes
     const channel = supabase.channel(`game-${sessionId}`);
-    
+
     channel
       .on(
         "postgres_changes",
@@ -121,9 +121,15 @@ export const useStore = create<GameState>((set, get) => ({
           filter: `session_id=eq.${sessionId}`,
         },
         (payload) => {
-          if (payload.new) get()._setGameStateFromServer(payload.new);
+          if (payload.new) get()._updateGameStateFromServer(payload.new);
         },
-      );
+      )
+      .on("broadcast", { event: "game-started" }, (payload) => {
+        get()._updateGameStateFromServer(payload.payload);
+      })
+      .on("broadcast", { event: "game-updated" }, (payload) => {
+        get()._updateGameStateFromServer(payload.payload);
+      });
 
     if (sessionUuid) {
       channel.on(
@@ -144,30 +150,36 @@ export const useStore = create<GameState>((set, get) => ({
         },
       );
 
-      channel.on(
-        "broadcast",
-        { event: "players-updated" },
-        async () => {
-          const { data } = await supabase
-            .from("players")
-            .select("*")
-            .eq("session_id", sessionUuid);
-          if (data) get()._setPlayersFromServer(data);
-        }
-      );
+      channel.on("broadcast", { event: "players-updated" }, async () => {
+        const { data } = await supabase
+          .from("players")
+          .select("*")
+          .eq("session_id", sessionUuid);
+        if (data) get()._setPlayersFromServer(data);
+      });
     }
-    
+
     channel.subscribe();
   },
 
-  _setGameStateFromServer: (payload) => {
-    set({
-      teamCount: payload.team_count ?? 2,
-      isGameStarted: payload.is_game_started ?? false,
-      activeTeamId: payload.active_team_id ?? null,
-      activePlayerIndexByTeam: payload.active_player_index_by_team ?? {},
-      scores: payload.scores ?? {},
-    });
+  _updateGameStateFromServer: (payload) => {
+    set((state) => ({
+      teamCount:
+        payload.team_count !== undefined ? payload.team_count : state.teamCount,
+      isGameStarted:
+        payload.is_game_started !== undefined
+          ? payload.is_game_started
+          : state.isGameStarted,
+      activeTeamId:
+        payload.active_team_id !== undefined
+          ? payload.active_team_id
+          : state.activeTeamId,
+      activePlayerIndexByTeam:
+        payload.active_player_index_by_team !== undefined
+          ? payload.active_player_index_by_team
+          : state.activePlayerIndexByTeam,
+      scores: payload.scores !== undefined ? payload.scores : state.scores,
+    }));
   },
 
   _setPlayersFromServer: (playersData) => {
@@ -197,12 +209,19 @@ export const useStore = create<GameState>((set, get) => ({
       .from("game_state")
       .update({ team_count: count })
       .eq("session_id", state.sessionId);
+
+    supabase.channel(`game-${state.sessionId}`).send({
+      type: "broadcast",
+      event: "game-updated",
+      payload: { team_count: count },
+    });
   },
 
   distributeTeams: async () => {
     const state = get();
-    const { players, teamCount, sessionId } = state;
-    if (!sessionId || players.length === 0 || teamCount <= 0) return;
+    const { players, teamCount, sessionId, sessionUuid } = state;
+    if (!sessionId || !sessionUuid || players.length === 0 || teamCount <= 0)
+      return;
 
     const shuffled = [...players].sort(() => Math.random() - 0.5);
     const playersWithTeams = shuffled.map((player, index) => ({
@@ -216,12 +235,18 @@ export const useStore = create<GameState>((set, get) => ({
     // Remote update players
     const upserts = playersWithTeams.map((p) => ({
       id: p.id,
-      session_id: sessionId,
+      session_id: sessionUuid,
       name: p.name,
       audio_url: p.audioUrl,
       team: p.team,
     }));
     await supabase.from("players").upsert(upserts);
+
+    supabase.channel(`game-${sessionId}`).send({
+      type: "broadcast",
+      event: "players-updated",
+      payload: { distributed: true },
+    });
   },
 
   startGame: async () => {
@@ -238,6 +263,8 @@ export const useStore = create<GameState>((set, get) => ({
     }
 
     const updates = {
+      session_id: sessionId,
+      team_count: teamCount,
       is_game_started: true,
       active_team_id: 1,
       active_player_index_by_team: initialIndices,
@@ -251,10 +278,13 @@ export const useStore = create<GameState>((set, get) => ({
       scores: initialScores,
     });
 
-    await supabase
-      .from("game_state")
-      .update(updates)
-      .eq("session_id", sessionId);
+    await supabase.from("game_state").upsert(updates);
+
+    supabase.channel(`game-${sessionId}`).send({
+      type: "broadcast",
+      event: "game-started",
+      payload: updates,
+    });
   },
 
   nextTurn: async () => {
@@ -291,6 +321,15 @@ export const useStore = create<GameState>((set, get) => ({
         active_team_id: nextTeamId,
       })
       .eq("session_id", state.sessionId);
+
+    supabase.channel(`game-${state.sessionId}`).send({
+      type: "broadcast",
+      event: "game-updated",
+      payload: {
+        active_player_index_by_team: newIndices,
+        active_team_id: nextTeamId,
+      },
+    });
   },
 
   addScore: async (teamId, points) => {
@@ -308,5 +347,11 @@ export const useStore = create<GameState>((set, get) => ({
       .from("game_state")
       .update({ scores: newScores })
       .eq("session_id", state.sessionId);
+
+    supabase.channel(`game-${state.sessionId}`).send({
+      type: "broadcast",
+      event: "game-updated",
+      payload: { scores: newScores },
+    });
   },
 }));

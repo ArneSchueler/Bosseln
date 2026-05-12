@@ -11,6 +11,22 @@ export default function WaitingRoom() {
     }
   };
 
+  const hasTeams = players.some((p) => p.team);
+
+  // Group players by team for display
+  const teams = players.reduce(
+    (acc, player) => {
+      if (player.team) {
+        if (!acc[player.team]) acc[player.team] = [];
+        acc[player.team].push(player);
+      }
+      return acc;
+    },
+    {} as Record<number, typeof players>,
+  );
+
+  const unassignedPlayers = players.filter((p) => !p.team);
+
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center">
       <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-6 animate-pulse">
@@ -36,24 +52,84 @@ export default function WaitingRoom() {
           </span>
         </h3>
 
-        <ul className="space-y-2">
-          {players.map((player) => (
-            <li
-              key={player.id}
-              className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100"
-            >
-              <span className="font-medium text-slate-700">{player.name}</span>
-              {player.audioUrl && (
-                <button
-                  onClick={() => playPlayerAudio(player.audioUrl)}
-                  className="text-slate-400 hover:text-green-600 transition-colors"
-                >
-                  <Play className="w-5 h-5" />
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+        {!hasTeams ? (
+          <ul className="space-y-2">
+            {players.map((player) => (
+              <li
+                key={player.id}
+                className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100"
+              >
+                <span className="font-medium text-slate-700">{player.name}</span>
+                {player.audioUrl && (
+                  <button
+                    onClick={() => playPlayerAudio(player.audioUrl)}
+                    className="text-slate-400 hover:text-green-600 transition-colors"
+                  >
+                    <Play className="w-5 h-5" />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="space-y-4">
+            {Object.entries(teams).map(([teamId, teamPlayers]) => (
+              <div
+                key={teamId}
+                className="border border-slate-200 rounded-lg overflow-hidden"
+              >
+                <div className="bg-slate-100 px-4 py-2 font-semibold text-slate-700 flex justify-between">
+                  <span>Team {teamId}</span>
+                  <span className="text-sm text-slate-500">{teamPlayers.length} players</span>
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {teamPlayers.map((player) => (
+                    <li
+                      key={player.id}
+                      className="flex justify-between items-center p-3 bg-white"
+                    >
+                      <span className="text-slate-700">{player.name}</span>
+                      {player.audioUrl && (
+                        <button
+                          onClick={() => playPlayerAudio(player.audioUrl)}
+                          className="text-slate-400 hover:text-green-600 transition-colors"
+                        >
+                          <Play className="w-5 h-5" />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+
+            {unassignedPlayers.length > 0 && (
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <div className="bg-slate-100 px-4 py-2 font-semibold text-slate-700">
+                  Unassigned Players
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {unassignedPlayers.map((player) => (
+                    <li
+                      key={player.id}
+                      className="flex justify-between items-center p-3 bg-white"
+                    >
+                      <span className="text-slate-700">{player.name}</span>
+                      {player.audioUrl && (
+                        <button
+                          onClick={() => playPlayerAudio(player.audioUrl)}
+                          className="text-slate-400 hover:text-green-600 transition-colors"
+                        >
+                          <Play className="w-5 h-5" />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
